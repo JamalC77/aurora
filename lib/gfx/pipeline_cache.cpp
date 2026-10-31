@@ -1718,8 +1718,12 @@ static std::vector<RecordedPair> load_recorded_pairs(bool unbuiltOnly = false) {
      * 650) can't build their shaders ("extension
      * 'chromium_experimental_multiview' is not allowed"), and its draws never
      * ask for them (xr.cpp leaves g_multiview off), so they are skipped. */
+#if defined(AURORA_ENABLE_OPENXR) && !defined(__EMSCRIPTEN__)
     const bool multiview =
         webgpu::g_device != nullptr && webgpu::g_device.HasFeature(wgpu::FeatureName::ChromiumExperimentalMultiview);
+#else
+    const bool multiview = false;
+#endif
     size_t skippedMultiview = 0;
     if (sqlite3_prepare_v2(g_pipelineCacheDb, sql, -1, &stmt, nullptr) == SQLITE_OK) {
       if (unbuiltOnly && TrackBuiltPairs)
