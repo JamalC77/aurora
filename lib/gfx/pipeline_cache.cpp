@@ -1713,6 +1713,14 @@ static std::vector<RecordedPair> load_recorded_pairs(bool unbuiltOnly = false) {
                           : "SELECT p.type, p.layout_key, c.config FROM pipeline_pair p "
                             "JOIN pipeline_cache c ON c.type = p.type AND c.hash = p.hash "
                             "ORDER BY p.first_frame_used";
+    /* Pairs recorded on a headset with multiview (the Quest 3 seed) include
+     * two-view eye layouts. A device without the feature (Quest 2's Adreno
+     * 650) can't build their shaders ("extension
+     * 'chromium_experimental_multiview' is not allowed"), and its draws never
+     * ask for them (xr.cpp leaves g_multiview off), so they are skipped. */
+    const bool multiview =
+        webgpu::g_device != nullptr && webgpu::g_device.HasFeature(wgpu::FeatureName::ChromiumExperimentalMultiview);
+    size_t skippedMultiview = 0;
     if (sqlite3_prepare_v2(g_pipelineCacheDb, sql, -1, &stmt, nullptr) == SQLITE_OK) {
       if (unbuiltOnly && TrackBuiltPairs)
         sqlite3_bind_int64(stmt, 1, static_cast<sqlite3_int64>(g_buildKey));
@@ -1723,6 +1731,10 @@ static std::vector<RecordedPair> load_recorded_pairs(bool unbuiltOnly = false) {
         const int size = sqlite3_column_bytes(stmt, 2);
         if (layoutIt == layouts.end() || blob == nullptr)
           continue;
+        if (!multiview && layoutIt->second.viewCount > 1) {
+          ++skippedMultiview;
+          continue;
+        }
         if (type == ShaderType::GX && size == static_cast<int>(sizeof(gx::PipelineConfig))) {
           gx::PipelineConfig config;
           std::memcpy(&config, blob, sizeof(config));
@@ -1737,6 +1749,8 @@ static std::vector<RecordedPair> load_recorded_pairs(bool unbuiltOnly = false) {
       }
     }
     sqlite3_finalize(stmt);
+    if (skippedMultiview > 0)
+      Log.info("Skipped {} recorded multiview pipelines: this device has no multiview", skippedMultiview);
   }
   return jobs;
 }
